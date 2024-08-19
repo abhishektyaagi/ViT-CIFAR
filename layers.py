@@ -2,19 +2,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchsummary
+#from customFCGoogleSlow import CustomFullyConnectedLayer as customLinear
+from customFCGoogleSlowParallel import CustomFullyConnectedLayer as customLinear
 
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, feats:int, mlp_hidden:int, head:int=8, dropout:float=0.):
+    def __init__(self, feats:int, mlp_hidden:int, head:int=8, dropout:float=0.,sparsity:float=0.1):
         super(TransformerEncoder, self).__init__()
         self.la1 = nn.LayerNorm(feats)
-        self.msa = MultiHeadSelfAttention(feats, head=head, dropout=dropout)
+        self.msa = MultiHeadSelfAttention(feats, head=head, dropout=dropout,sparsity=sparsity)
         self.la2 = nn.LayerNorm(feats)
         self.mlp = nn.Sequential(
-            nn.Linear(feats, mlp_hidden),
+            customLinear(feats, mlp_hidden,sparsity=sparsity),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(mlp_hidden, feats),
+            customLinear(mlp_hidden, feats,sparsity=sparsity),
             nn.GELU(),
             nn.Dropout(dropout),
         )
@@ -26,17 +28,17 @@ class TransformerEncoder(nn.Module):
 
 
 class MultiHeadSelfAttention(nn.Module):
-    def __init__(self, feats:int, head:int=8, dropout:float=0.):
+    def __init__(self, feats:int, head:int=8, dropout:float=0.,sparsity:float=0.1):
         super(MultiHeadSelfAttention, self).__init__()
         self.head = head
         self.feats = feats
         self.sqrt_d = self.feats**0.5
 
-        self.q = nn.Linear(feats, feats)
-        self.k = nn.Linear(feats, feats)
-        self.v = nn.Linear(feats, feats)
+        self.q = customLinear(feats, feats,sparsity=sparsity)
+        self.k = customLinear(feats, feats,sparsity=sparsity)
+        self.v = customLinear(feats, feats,sparsity=sparsity)
 
-        self.o = nn.Linear(feats, feats)
+        self.o = customLinear(feats, feats,sparsity=sparsity)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):

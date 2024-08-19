@@ -8,8 +8,11 @@ import torchvision
 import pytorch_lightning as pl
 import warmup_scheduler
 import numpy as np
+import math
 
 from utils import get_model, get_dataset, get_experiment_name, get_criterion
+#from customFCGoogleSlow import CustomFullyConnectedLayer as customLinear
+from customFCGoogleSlowParallel import CustomFullyConnectedLayer as customLinear
 from da import CutMix, MixUp
 
 parser = argparse.ArgumentParser()
@@ -45,6 +48,8 @@ parser.add_argument("--mlp-hidden", default=384, type=int)
 parser.add_argument("--off-cls-token", action="store_true")
 parser.add_argument("--seed", default=42, type=int)
 parser.add_argument("--project-name", default="VisionTransformer")
+parser.add_argument("--sparsity", default=0.1, type=float)
+parser.add_argument("--topkLR", default=0.05, type=float)   #Learning rate for the alpha parameter
 args = parser.parse_args()
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
@@ -62,6 +67,7 @@ train_ds, test_ds = get_dataset(args)
 train_dl = torch.utils.data.DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True)
 test_dl = torch.utils.data.DataLoader(test_ds, batch_size=args.eval_batch_size, num_workers=args.num_workers, pin_memory=True)
 
+
 class Net(pl.LightningModule):
     def __init__(self, hparams):
         super(Net, self).__init__()
@@ -74,6 +80,13 @@ class Net(pl.LightningModule):
         if hparams.mixup:
             self.mixup = MixUp(alpha=1.)
         self.log_image_flag = hparams.api_key is None
+        self.topkLR = hparams.topkLR
+
+        self.topkLR_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            torch.optim.Adam([torch.nn.Parameter(torch.tensor(self.topkLR))], lr=self.topkLR), 
+            T_max=self.hparams.max_epochs, 
+            eta_min=0.0001
+        )
 
     def forward(self, x):
         return self.model(x)
@@ -110,7 +123,17 @@ class Net(pl.LightningModule):
         return loss
 
     def training_epoch_end(self, outputs):
+        # Update topkLR using the cosine annealing scheduler
+        self.topkLR_scheduler.step()
+        new_topkLR = self.topkLR_scheduler.get_last_lr()[0]
+
+        # Send the updated topkLR to each custom linear layer using update_alpha_lr method
+        for module in self.model.modules():
+            if isinstance(module, customLinear):
+                module.update_alpha_lr(new_topkLR)
+
         self.log("lr", self.optimizer.param_groups[0]["lr"], on_epoch=self.current_epoch)
+        self.log("topkLR", self.topkLR, on_epoch=True)
 
     def validation_step(self, batch, batch_idx):
         img, label = batch
@@ -146,9 +169,32 @@ if __name__ == "__main__":
             name=experiment_name
         )
         refresh_rate = 1
+
+
+    '''Before the training starts, assign the number of diagonals for all the linear layers
+    1) Get the required sparsity for the model
+    2) Use that sparsity value, and calculate the number of diagonals for each layer
+    3) Assign the number of diagonals to the CustomFullyConnectedLayer class'''
+
     net = Net(args)
+
+    #Get the required sparsity for the model
+    sparsity = args.sparsity
+
+    """ #Go through all the layers and calculate the number of diagonals and store them in a list
+    numDiagonals = {}
+    for layer in net.model.modules():
+        if isinstance(layer, customLinear):
+            num_params = layer.weight.shape[1] * layer.weight.shape[0]
+            req_params = int(sparsity * num_params)
+            num_diagonals = math.ceil(req_params/min(layer.weight.shape[0], layer.weight.shape[1]))
+
+            #Use the layer name as the key in the dictionary
+            numDiagonals[layer] = num_diagonals """
+
     trainer = pl.Trainer(precision=args.precision,fast_dev_run=args.dry_run, gpus=args.gpus, benchmark=args.benchmark, logger=logger, max_epochs=args.max_epochs, weights_summary="full", progress_bar_refresh_rate=refresh_rate)
     trainer.fit(model=net, train_dataloader=train_dl, val_dataloaders=test_dl)
+
     if not args.dry_run:
         model_path = f"weights/{experiment_name}.pth"
         torch.save(net.state_dict(), model_path)
