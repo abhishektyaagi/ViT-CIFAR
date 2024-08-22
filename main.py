@@ -10,6 +10,8 @@ import warmup_scheduler
 import numpy as np
 import wandb
 import math
+from pytorch_lightning.loggers import WandbLogger
+
 
 from utils import get_model, get_dataset, get_experiment_name, get_criterion
 #from customFCGoogleSlow import CustomFullyConnectedLayer as customLinear
@@ -73,6 +75,8 @@ test_dl = torch.utils.data.DataLoader(test_ds, batch_size=args.eval_batch_size, 
 watermark = "{}_{}_{}_{}_{}_{}_{}".format(args.model-name,args.dataset,args.patch,args.num-layers,args.hidden,args.mlp-hidden,args.sparsity)
 wandb.init(projec="ViT",name=watermark)
 wandb.config.update(args)
+wandb_logger = WandbLogger(project=args.model-name, name=watermark)
+
 
 class Net(pl.LightningModule):
     def __init__(self, hparams):
@@ -190,18 +194,7 @@ if __name__ == "__main__":
     #Get the required sparsity for the model
     sparsity = args.sparsity
 
-    """ #Go through all the layers and calculate the number of diagonals and store them in a list
-    numDiagonals = {}
-    for layer in net.model.modules():
-        if isinstance(layer, customLinear):
-            num_params = layer.weight.shape[1] * layer.weight.shape[0]
-            req_params = int(sparsity * num_params)
-            num_diagonals = math.ceil(req_params/min(layer.weight.shape[0], layer.weight.shape[1]))
-
-            #Use the layer name as the key in the dictionary
-            numDiagonals[layer] = num_diagonals """
-
-    trainer = pl.Trainer(precision=args.precision,fast_dev_run=args.dry_run, gpus=args.gpus, benchmark=args.benchmark, logger=logger, max_epochs=args.max_epochs, weights_summary="full", progress_bar_refresh_rate=refresh_rate)
+    trainer = pl.Trainer(precision=args.precision,fast_dev_run=args.dry_run, gpus=args.gpus, benchmark=args.benchmark, logger=wandb_logger, max_epochs=args.max_epochs, weights_summary="full", progress_bar_refresh_rate=refresh_rate)
     trainer.fit(model=net, train_dataloader=train_dl, val_dataloaders=test_dl)
 
     if not args.dry_run:
