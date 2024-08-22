@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torchsummary
-
+import pdb
 from layers import TransformerEncoder
 from customFCGoogleSlow import CustomFullyConnectedLayer as customLinear
 
@@ -16,6 +16,7 @@ class ViT(nn.Module):
         f = (img_size//self.patch)**2*3 # 48 # patch vec length
         num_tokens = (self.patch**2)+1 if self.is_cls_token else (self.patch**2)
 
+        pdb.set_trace()
         self.emb = customLinear(f, hidden,sparsity=sparsity) # (b, n, f)
         self.cls_token = nn.Parameter(torch.randn(1, 1, hidden)) if is_cls_token else None
         self.pos_emb = nn.Parameter(torch.randn(1,num_tokens, hidden))
@@ -57,5 +58,6 @@ if __name__ == "__main__":
     # out = net(x)
     # out.mean().backward()
     torchsummary.summary(net, (c,h,w))
+    #pdb.set_trace()
     # print(out.shape)
     

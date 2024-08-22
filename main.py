@@ -8,6 +8,7 @@ import torchvision
 import pytorch_lightning as pl
 import warmup_scheduler
 import numpy as np
+import wandb
 import math
 
 from utils import get_model, get_dataset, get_experiment_name, get_criterion
@@ -21,7 +22,7 @@ parser.add_argument("--dataset", default="c10", type=str, help="[c10, c100, svhn
 parser.add_argument("--num-classes", default=10, type=int)
 parser.add_argument("--model-name", default="vit", help="[vit]", type=str)
 parser.add_argument("--patch", default=8, type=int)
-parser.add_argument("--batch-size", default=128, type=int)
+parser.add_argument("--batch-size", default=512, type=int)
 parser.add_argument("--eval-batch-size", default=1024, type=int)
 parser.add_argument("--lr", default=1e-3, type=float)
 parser.add_argument("--min-lr", default=1e-5, type=float)
@@ -68,6 +69,11 @@ train_dl = torch.utils.data.DataLoader(train_ds, batch_size=args.batch_size, shu
 test_dl = torch.utils.data.DataLoader(test_ds, batch_size=args.eval_batch_size, num_workers=args.num_workers, pin_memory=True)
 
 
+#Record the training in wandb
+watermark = "{}_{}_{}_{}_{}_{}_{}".format(args.model-name,args.dataset,args.patch,args.num-layers,args.hidden,args.mlp-hidden,args.sparsity)
+wandb.init(projec="ViT",name=watermark)
+wandb.config.update(args)
+
 class Net(pl.LightningModule):
     def __init__(self, hparams):
         super(Net, self).__init__()
@@ -87,6 +93,7 @@ class Net(pl.LightningModule):
             T_max=self.hparams.max_epochs, 
             eta_min=0.0001
         )
+        self.log("sparsity",self.hparams.sparsity,on_epoch=True)
 
     def forward(self, x):
         return self.model(x)
@@ -177,6 +184,8 @@ if __name__ == "__main__":
     3) Assign the number of diagonals to the CustomFullyConnectedLayer class'''
 
     net = Net(args)
+
+    wandb.watch(net)
 
     #Get the required sparsity for the model
     sparsity = args.sparsity
