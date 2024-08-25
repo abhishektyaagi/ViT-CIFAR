@@ -139,7 +139,7 @@ class CustomFullyConnectedLayer(nn.Module):
         self.diag_length = min(in_features, out_features)
 
         num_params = in_features * out_features
-        req_params = int(sparsity * num_params)
+        req_params = int((1-sparsity) * num_params)
         K = math.ceil(req_params/min(in_features, out_features))
 
         self.K = K

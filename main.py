@@ -10,6 +10,7 @@ import warmup_scheduler
 import numpy as np
 import wandb
 import math
+import pdb
 from pytorch_lightning.loggers import WandbLogger
 
 
@@ -70,12 +71,15 @@ train_ds, test_ds = get_dataset(args)
 train_dl = torch.utils.data.DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True)
 test_dl = torch.utils.data.DataLoader(test_ds, batch_size=args.eval_batch_size, num_workers=args.num_workers, pin_memory=True)
 
+modelName = args.model_name
+numLayers = args.num_layers
+mlpHidden = args.mlp_hidden
 
 #Record the training in wandb
-watermark = "{}_{}_{}_{}_{}_{}_{}".format(args.model-name,args.dataset,args.patch,args.num-layers,args.hidden,args.mlp-hidden,args.sparsity)
-wandb.init(projec="ViT",name=watermark)
+watermark = "{}_{}_{}_{}_{}_{}_{}".format(modelName,args.dataset,args.patch,numLayers,args.hidden,mlpHidden,args.sparsity)
+wandb.init(project="ViT",name=watermark)
 wandb.config.update(args)
-wandb_logger = WandbLogger(project=args.model-name, name=watermark)
+wandb_logger = WandbLogger(project=args.model_name, name=watermark)
 
 
 class Net(pl.LightningModule):
@@ -137,14 +141,32 @@ class Net(pl.LightningModule):
         # Update topkLR using the cosine annealing scheduler
         self.topkLR_scheduler.step()
         new_topkLR = self.topkLR_scheduler.get_last_lr()[0]
-
+        #pdb.set_trace()
         # Send the updated topkLR to each custom linear layer using update_alpha_lr method
+        i = 0
         for module in self.model.modules():
             if isinstance(module, customLinear):
                 module.update_alpha_lr(new_topkLR)
+                if i == 0:
+                    #Save the topk value to a file
+                    with open("topkLR_"+str(args.sparsity)+".txt", "a") as f:
+                        f.write(f"{new_topkLR}\n")
+                    i += 1  
+
+        #Print the number of non-zero values in the network to a file
+        non_zero_values = 0
+        total_values = 0
+        for module in self.model.modules():
+            if isinstance(module, customLinear):
+                non_zero_values += torch.sum(module.alpha > 0).item()
+                total_values += module.alpha.numel()
+                
+        #save the values to a file
+        with open("non_zero_values_"+str(args.sparsity)+".txt", "a") as f:
+            f.write(f"{non_zero_values},{total_values}\n")  
 
         self.log("lr", self.optimizer.param_groups[0]["lr"], on_epoch=self.current_epoch)
-        self.log("topkLR", self.topkLR, on_epoch=True)
+        self.log("topkLR", new_topkLR, on_epoch=True)
 
     def validation_step(self, batch, batch_idx):
         img, label = batch

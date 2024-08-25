@@ -3,7 +3,7 @@ import torch.nn as nn
 import torchsummary
 import pdb
 from layers import TransformerEncoder
-from customFCGoogleSlow import CustomFullyConnectedLayer as customLinear
+from customFCGoogleSlowParallel import CustomFullyConnectedLayer as customLinear
 
 class ViT(nn.Module):
     def __init__(self, in_c:int=3, num_classes:int=10, img_size:int=32, patch:int=8, dropout:float=0., num_layers:int=7, hidden:int=384, mlp_hidden:int=384*4, head:int=8, is_cls_token:bool=True, sparsity:float=0.1):
@@ -16,15 +16,18 @@ class ViT(nn.Module):
         f = (img_size//self.patch)**2*3 # 48 # patch vec length
         num_tokens = (self.patch**2)+1 if self.is_cls_token else (self.patch**2)
 
-        pdb.set_trace()
-        self.emb = customLinear(f, hidden,sparsity=sparsity) # (b, n, f)
+        #pdb.set_trace()
+        #self.emb = customLinear(f, hidden,sparsity=sparsity) # (b, n, f)
+        self.emb = nn.Linear(f, hidden)
         self.cls_token = nn.Parameter(torch.randn(1, 1, hidden)) if is_cls_token else None
         self.pos_emb = nn.Parameter(torch.randn(1,num_tokens, hidden))
         enc_list = [TransformerEncoder(hidden,mlp_hidden=mlp_hidden, dropout=dropout, head=head,sparsity=sparsity) for _ in range(num_layers)]
         self.enc = nn.Sequential(*enc_list)
+        
         self.fc = nn.Sequential(
             nn.LayerNorm(hidden),
-            customLinear(hidden, num_classes,sparsity=sparsity) # for cls_token
+            #customLinear(hidden, num_classes,sparsity=sparsity) # for cls_token
+            nn.Linear(hidden, num_classes)
         )
 
 

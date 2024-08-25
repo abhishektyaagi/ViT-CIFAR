@@ -5,7 +5,6 @@ import torchsummary
 #from customFCGoogleSlow import CustomFullyConnectedLayer as customLinear
 from customFCGoogleSlowParallel import CustomFullyConnectedLayer as customLinear
 
-
 class TransformerEncoder(nn.Module):
     def __init__(self, feats:int, mlp_hidden:int, head:int=8, dropout:float=0.,sparsity:float=0.1):
         super(TransformerEncoder, self).__init__()
